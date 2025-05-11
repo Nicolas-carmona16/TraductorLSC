@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.ui.theme.FirstBlue
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.ui.theme.SecondBlue
+import coil.compose.AsyncImage
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.ui.theme.TraductorLSCTheme
 
 
@@ -103,7 +104,15 @@ fun MainScreen() {
             Text(text = "Iniciar Traducción", fontSize = 18.sp)
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(60.dp))
+
+        AsyncImage(
+            model = R.drawable.animacion,
+            contentDescription = "Animacion",
+            modifier = Modifier
+                .fillMaxWidth(1f)
+                .height(200.dp)
+        )
     }
 }
 
