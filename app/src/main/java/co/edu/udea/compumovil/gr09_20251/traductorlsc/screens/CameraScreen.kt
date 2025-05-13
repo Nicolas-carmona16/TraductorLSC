@@ -34,6 +34,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.graphics.Color
+import co.edu.udea.compumovil.gr09_20251.traductorlsc.ui.theme.SecondBlue
+import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 
 @Composable
 fun CameraScreen(navController: NavController) {
@@ -48,10 +52,25 @@ fun CameraScreen(navController: NavController) {
     var videoCapture: VideoCapture<Recorder>? by remember { mutableStateOf(null) }
     var recording: Recording? by remember { mutableStateOf(null) }
 
+    var elapsedTime by remember { mutableLongStateOf(0L) }
+    var timerJob by remember { mutableStateOf<Job?>(null) }
+
     val previewView = remember {
         PreviewView(context).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        }
+    }
+
+    fun formatTime(millis: Long): String {
+        val seconds = (millis / 1000) % 60
+        val minutes = (millis / (1000 * 60)) % 60
+        return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            timerJob?.cancel()
         }
     }
 
@@ -129,9 +148,26 @@ fun CameraScreen(navController: NavController) {
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 16.dp)
             ) {
+                Text(
+                    text = if (isRecording) formatTime(elapsedTime) else "00:00",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = if (isRecording) Color.Red else Color.Gray,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 16.dp, bottom = 32.dp)
+                )
+
                 Button(
                     onClick = {
                         if (!isRecording) {
+                            elapsedTime = 0L
+                            timerJob = CoroutineScope(Dispatchers.Main).launch {
+                                while (isActive) {
+                                    delay(1000)
+                                    elapsedTime += 1000
+                                }
+                            }
+
                             startRecording(
                                 context = context,
                                 videoCapture = videoCapture,
@@ -144,6 +180,8 @@ fun CameraScreen(navController: NavController) {
                             recording?.stop()
                             recording = null
                             isRecording = false
+                            timerJob?.cancel()
+                            timerJob = null
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -182,16 +220,15 @@ fun CameraScreen(navController: NavController) {
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .size(80.dp)
-                        .padding(bottom = 32.dp)
+                        .padding(bottom = 32.dp, end = 20.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "Cambiar cámara",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = SecondBlue
                     )
                 }
             }
-
         } else {
             Text("Esperando permisos de cámara y audio...")
         }
