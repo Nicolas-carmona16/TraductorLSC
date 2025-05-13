@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
+import co.edu.udea.compumovil.gr09_20251.traductorlsc.screens.CameraScreen
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.screens.MainScreen
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.screens.MethodSelectionScreen
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.screens.VideoUploadScreen
@@ -41,6 +42,14 @@ fun NavGraphBuilder.appNavigation(navController: NavController) {
             color = MaterialTheme.colorScheme.background
         ) {
             VideoUploadScreen(navController)
+        }
+    }
+    composable(AppRoutes.CAMERA) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            CameraScreen(navController)
         }
     }
 }
