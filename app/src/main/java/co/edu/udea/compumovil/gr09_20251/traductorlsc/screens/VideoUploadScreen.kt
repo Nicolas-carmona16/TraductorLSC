@@ -1,13 +1,14 @@
 package co.edu.udea.compumovil.gr09_20251.traductorlsc.screens
 
 import android.Manifest
-import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -26,14 +27,17 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.ui.PlayerView
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
+import co.edu.udea.compumovil.gr09_20251.traductorlsc.viewmodels.VideoUploadViewModel
 
 @Composable
 fun VideoUploadScreen(navController: NavController) {
     val context = LocalContext.current
-    var selectedVideoUri by remember { mutableStateOf<Uri?>(null) }
-    var fileName by remember { mutableStateOf("") }
     var showPermissionRationale by remember { mutableStateOf(false) }
     var permissionDenied by remember { mutableStateOf(false) }
+    val viewModel: VideoUploadViewModel = viewModel()
+    val selectedVideoUri by viewModel.selectedVideoUri.collectAsState()
+    val fileName by viewModel.fileName.collectAsState()
 
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -67,14 +71,15 @@ fun VideoUploadScreen(navController: NavController) {
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri ->
             uri?.let {
-                selectedVideoUri = it
                 val cursor = context.contentResolver.query(it, null, null, null, null)
+                var name = ""
                 cursor?.use {
                     if (it.moveToFirst()) {
                         val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        fileName = it.getString(nameIndex)
+                        name = it.getString(nameIndex)
                     }
                 }
+                viewModel.setVideo(uri, name)
             } ?: run {
                 navController.popBackStack()
             }
@@ -92,22 +97,24 @@ fun VideoUploadScreen(navController: NavController) {
         }
     }
 
-    LaunchedEffect(Unit) {
-        when {
-            ContextCompat.checkSelfPermission(
-                context,
-                storagePermission
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED -> {
-                videoPickerLauncher.launch("video/*")
-            }
-            ContextCompat.checkSelfPermission(
-                context,
-                storagePermission
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED -> {
-                showPermissionRationale = true
-            }
-            else -> {
-                permissionLauncher.launch(storagePermission)
+    LaunchedEffect(selectedVideoUri) {
+        if (selectedVideoUri == null) {
+            when {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    storagePermission
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED -> {
+                    videoPickerLauncher.launch("video/*")
+                }
+                ContextCompat.checkSelfPermission(
+                    context,
+                    storagePermission
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED -> {
+                    showPermissionRationale = true
+                }
+                else -> {
+                    permissionLauncher.launch(storagePermission)
+                }
             }
         }
     }
@@ -150,14 +157,16 @@ fun VideoUploadScreen(navController: NavController) {
     }
 
     Column(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
     ) {
         AppHeader()
 
         IconButton(
             onClick = {
-                selectedVideoUri = null
                 exoPlayer.stop()
+                viewModel.clearVideo()
                 navController.popBackStack()
             },
             modifier = Modifier.padding(16.dp)
