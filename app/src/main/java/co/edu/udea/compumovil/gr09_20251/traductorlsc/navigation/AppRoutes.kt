@@ -9,6 +9,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.screens.MainScreen
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.screens.MethodSelectionScreen
+import co.edu.udea.compumovil.gr09_20251.traductorlsc.screens.VideoUploadScreen
 
 object AppRoutes {
     const val MAIN_SCREEN = "main_screen"
@@ -32,6 +33,14 @@ fun NavGraphBuilder.appNavigation(navController: NavController) {
             color = MaterialTheme.colorScheme.background
         ) {
             MethodSelectionScreen(navController)
+        }
+    }
+    composable(AppRoutes.VIDEO_UPLOAD) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            VideoUploadScreen(navController)
         }
     }
 }
