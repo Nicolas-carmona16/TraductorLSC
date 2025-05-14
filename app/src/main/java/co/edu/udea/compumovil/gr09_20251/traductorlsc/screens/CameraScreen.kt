@@ -3,6 +3,7 @@ package co.edu.udea.compumovil.gr09_20251.traductorlsc.screens
 import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,10 +35,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.graphics.Color
+import co.edu.udea.compumovil.gr09_20251.traductorlsc.navigation.AppRoutes
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.ui.theme.SecondBlue
 import kotlinx.coroutines.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 
 @Composable
 fun CameraScreen(navController: NavController) {
@@ -51,6 +51,7 @@ fun CameraScreen(navController: NavController) {
     var isRecording by remember { mutableStateOf(false) }
     var videoCapture: VideoCapture<Recorder>? by remember { mutableStateOf(null) }
     var recording: Recording? by remember { mutableStateOf(null) }
+    var outputUri by remember { mutableStateOf<Uri?>(null) }
 
     var elapsedTime by remember { mutableLongStateOf(0L) }
     var timerJob by remember { mutableStateOf<Job?>(null) }
@@ -61,6 +62,8 @@ fun CameraScreen(navController: NavController) {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
     }
+
+    var isProcessing by remember { mutableStateOf(false) }
 
     fun formatTime(millis: Long): String {
         val seconds = (millis / 1000) % 60
@@ -128,6 +131,15 @@ fun CameraScreen(navController: NavController) {
         }
     }
 
+    if (isProcessing) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Procesando video...") },
+            text = { CircularProgressIndicator() },
+            confirmButton = { }
+        )
+    }
+
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
@@ -174,7 +186,16 @@ fun CameraScreen(navController: NavController) {
                                 onRecordingStarted = { recordingInstance ->
                                     recording = recordingInstance
                                     isRecording = true
+                                },
+                                onRecordingFinished = { uri ->
+                                    isProcessing = true
+                                    CoroutineScope(Dispatchers.Main).launch {
+                                        delay(1000) // simula espera, opcional si usas lógica real de preparación
+                                        isProcessing = false
+                                        navController.navigate(AppRoutes.getVideoPreviewRoute(uri.toString()))
+                                    }
                                 }
+
                             )
                         } else {
                             recording?.stop()
@@ -182,6 +203,10 @@ fun CameraScreen(navController: NavController) {
                             isRecording = false
                             timerJob?.cancel()
                             timerJob = null
+
+                            outputUri?.let { uri ->
+                                navController.navigate(AppRoutes.getVideoPreviewRoute(uri.toString()))
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -247,7 +272,8 @@ private suspend fun android.content.Context.getCameraProvider(): ProcessCameraPr
 private fun startRecording(
     context: android.content.Context,
     videoCapture: VideoCapture<Recorder>?,
-    onRecordingStarted: (Recording) -> Unit
+    onRecordingStarted: (Recording) -> Unit,
+    onRecordingFinished: (Uri) -> Unit
 ) {
     if (ContextCompat.checkSelfPermission(
             context,
@@ -273,14 +299,21 @@ private fun startRecording(
         MediaStore.Video.Media.EXTERNAL_CONTENT_URI
     ).setContentValues(contentValues).build()
 
-    var recordingInstance: Recording? = null
+    var currentRecording: Recording? = null
 
-    recordingInstance = videoCapture?.output
+    currentRecording = videoCapture?.output
         ?.prepareRecording(context, mediaStoreOutputOptions)
         ?.withAudioEnabled()
         ?.start(ContextCompat.getMainExecutor(context)) { event ->
-            if (event is VideoRecordEvent.Start) {
-                recordingInstance?.let { onRecordingStarted(it) }
+            when (event) {
+                is VideoRecordEvent.Start -> {
+                    currentRecording?.let { onRecordingStarted(it) }
+                }
+                is VideoRecordEvent.Finalize -> {
+                    val uri = event.outputResults.outputUri
+                    onRecordingFinished(uri)
+                }
             }
         }
 }
+
