@@ -69,6 +69,34 @@ class HandDetector(context: Context) {
         }
     }
 
+    /**
+     * Extrae los 21 keypoints (x, y, z) de la primera mano detectada y los retorna como un FloatArray de tamaño 63.
+     * Retorna null si no se detecta mano.
+     */
+    fun extractHandKeypoints(bitmap: Bitmap): FloatArray? {
+        try {
+            val argbBitmap = if (bitmap.config != Bitmap.Config.ARGB_8888) {
+                bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            } else {
+                bitmap
+            }
+            val mpImage = BitmapImageBuilder(argbBitmap).build()
+            val result: HandLandmarkerResult = handLandmarker.detect(mpImage)
+            val landmarks = result.landmarks().firstOrNull() ?: return null
+            if (landmarks.size != 21) return null
+            val keypoints = FloatArray(63)
+            for ((i, lm) in landmarks.withIndex()) {
+                keypoints[i * 3] = lm.x()
+                keypoints[i * 3 + 1] = lm.y()
+                keypoints[i * 3 + 2] = lm.z()
+            }
+            return keypoints
+        } catch (e: Exception) {
+            println("HandDetector: Error extracting keypoints: ${e.message}")
+            return null
+        }
+    }
+
     fun release() {
         handLandmarker.close()
     }

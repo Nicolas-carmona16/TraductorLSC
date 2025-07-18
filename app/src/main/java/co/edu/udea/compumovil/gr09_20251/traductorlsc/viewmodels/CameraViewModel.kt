@@ -121,13 +121,13 @@ class CameraViewModel : ViewModel() {
                     println("CameraViewModel: Hand confidence = ${_handDetectionConfidence.value}")
                 }
                 
-                // Procesar el frame usando la región de la mano si existe
-                val optimizedBitmap = if (handDetection != null) {
-                    extractHandRegion(bitmap, handDetection.boundingBox)
+                // Extraer keypoints de la mano
+                val keypoints = handDetector?.extractHandKeypoints(bitmap)
+                val prediction = if (keypoints != null) {
+                    modelManager?.predictSign(keypoints)
                 } else {
-                    optimizeBitmapForProcessing(bitmap, null)
+                    null
                 }
-                val prediction = modelManager?.predictSign(optimizedBitmap)
                 prediction?.let { handlePrediction(it) }
                 
                 // Actualizar UI en el hilo principal

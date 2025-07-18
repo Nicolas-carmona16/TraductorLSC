@@ -42,18 +42,11 @@ class VideoPreviewViewModel : ViewModel() {
     fun processFrame(bitmap: Bitmap) {
         viewModelScope.launch {
             _isProcessing.value = true
-            
             try {
-                // Detectar región de la mano
-                val handDetection = handDetector?.detectHandRegion(bitmap)
-                _handBoundingBox.value = handDetection?.boundingBox
-
-                if (handDetection != null) {
-                    // Extraer la región de la mano
-                    val handBitmap = extractHandRegion(bitmap, handDetection.boundingBox)
-                    
-                    // Clasificar la seña
-                    val prediction = signClassifier?.classify(handBitmap)
+                // Detectar región de la mano y extraer keypoints
+                val keypoints = handDetector?.extractHandKeypoints(bitmap)
+                if (keypoints != null) {
+                    val prediction = signClassifier?.classify(keypoints)
                     _currentPrediction.value = prediction ?: ""
                 } else {
                     _currentPrediction.value = ""
@@ -64,15 +57,6 @@ class VideoPreviewViewModel : ViewModel() {
                 _isProcessing.value = false
             }
         }
-    }
-
-    private fun extractHandRegion(bitmap: Bitmap, region: RectF): Bitmap {
-        val left = (region.left * bitmap.width).toInt().coerceIn(0, bitmap.width)
-        val top = (region.top * bitmap.height).toInt().coerceIn(0, bitmap.height)
-        val right = (region.right * bitmap.width).toInt().coerceIn(0, bitmap.width)
-        val bottom = (region.bottom * bitmap.height).toInt().coerceIn(0, bitmap.height)
-        
-        return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
     }
 
     fun setVideo(uri: Uri, name: String) {

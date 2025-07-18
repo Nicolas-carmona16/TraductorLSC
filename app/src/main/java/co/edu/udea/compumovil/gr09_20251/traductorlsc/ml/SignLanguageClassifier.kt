@@ -13,11 +13,11 @@ class SignLanguageClassifier(context: Context) {
     private val modelManager = TFLiteModelManager(context)
     
     /**
-     * Clasifica una imagen y retorna la letra predicha
+     * Clasifica un vector de keypoints y retorna la letra predicha
      */
-    fun classify(bitmap: Bitmap): String {
+    fun classify(keypoints: FloatArray): String {
         return try {
-            val prediction = modelManager.predictSign(bitmap)
+            val prediction = modelManager.predictSign(keypoints)
             if (prediction == SignPrediction.ERROR) {
                 Log.w(TAG, "Error en la clasificación")
                 ""

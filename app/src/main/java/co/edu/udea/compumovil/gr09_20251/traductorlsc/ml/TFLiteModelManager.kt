@@ -17,22 +17,18 @@ class TFLiteModelManager(private val context: Context) {
     
     companion object {
         private const val TAG = "TFLiteModelManager"
-        private const val MODEL_PATH = "model3.tflite"
-        private const val INPUT_SIZE = 28
-        private const val NUM_CHANNELS = 1
-        private const val NUM_CLASSES = 19
+        private const val MODEL_PATH = "hand_sign_vowels_model.tflite"
+        private const val INPUT_SIZE = 63 // 21 keypoints * 3 coordenadas
+        private const val NUM_CLASSES = 5 // A, B, C, D, E
         
-        // Mapeo de letras según el modelo entrenado
+        // Mapeo de las letras
         private val LETTER_MAPPING = mapOf(
-            0 to "A", 1 to "B", 2 to "C", 3 to "D", 4 to "E", 5 to "F", 6 to "G",
-            7 to "I", 8 to "K", 9 to "L", 10 to "M", 11 to "N", 12 to "O", 13 to "P",
-            14 to "Q", 15 to "R", 16 to "S", 17 to "T", 18 to "U"
+            0 to "A", 1 to "B", 2 to "C", 3 to "D", 4 to "E"
         )
-        
-        // Funciones especiales
-        private const val SPECIAL_BORRAR = "Q"  // Índice 14
-        private const val SPECIAL_ESPACIO = "O"  // Índice 12
-        private const val SPECIAL_GUARDAR = "B"  // Índice 1
+
+        private const val SPECIAL_BORRAR = "Q"
+        private const val SPECIAL_ESPACIO = "O"
+        private const val SPECIAL_GUARDAR = "B"
     }
     
     private var interpreter: Interpreter? = null
@@ -60,7 +56,7 @@ class TFLiteModelManager(private val context: Context) {
             interpreter = Interpreter(modelFile, options)
             
             // Pre-allocar buffers para evitar crear nuevos en cada predicción
-            inputBuffer = ByteBuffer.allocateDirect(INPUT_SIZE * INPUT_SIZE * NUM_CHANNELS * 4)
+            inputBuffer = ByteBuffer.allocateDirect(INPUT_SIZE * 4)
             inputBuffer?.order(ByteOrder.nativeOrder())
             
             outputBuffer = ByteBuffer.allocateDirect(NUM_CLASSES * 4)
@@ -89,78 +85,39 @@ class TFLiteModelManager(private val context: Context) {
     }
     
     /**
-     * Procesa una imagen y retorna la predicción (optimizado)
+     * Procesa un vector de keypoints y retorna la predicción
      */
-    fun predictSign(image: Bitmap): SignPrediction {
+    fun predictSign(keypoints: FloatArray): SignPrediction {
         if (!isModelLoaded || interpreter == null || inputBuffer == null || outputBuffer == null) {
             Log.e(TAG, "Modelo no está cargado o buffers no inicializados")
             return SignPrediction.ERROR
         }
-        
+        if (keypoints.size != INPUT_SIZE) {
+            Log.e(TAG, "El tamaño del vector de keypoints es incorrecto")
+            return SignPrediction.ERROR
+        }
         return try {
-            // Preprocesar la imagen de manera optimizada
-            val processedImage = preprocessImageOptimized(image)
-            
-            // Limpiar y reutilizar buffers
             inputBuffer?.clear()
             outputBuffer?.clear()
-            
-            // Llenar el buffer de entrada de manera más eficiente
-            fillInputBuffer(processedImage, inputBuffer!!)
-            
-            // Ejecutar inferencia
+            // Llenar el buffer de entrada con los keypoints
+            for (value in keypoints) {
+                inputBuffer!!.putFloat(value)
+            }
             interpreter?.run(inputBuffer!!, outputBuffer!!)
-            
-            // Procesar resultados
             val results = processOutputBuffer(outputBuffer!!)
-            
-            // Obtener la predicción más probable
             val maxIndex = results.indices.maxByOrNull { results[it] } ?: 0
             val confidence = results[maxIndex]
             val predictedLetter = LETTER_MAPPING[maxIndex] ?: "UNKNOWN"
-            
             Log.d(TAG, "Predicción: $predictedLetter con confianza: $confidence")
-            
             SignPrediction(
                 letter = predictedLetter,
                 confidence = confidence,
-                isSpecialFunction = isSpecialFunction(predictedLetter),
-                specialFunctionType = getSpecialFunctionType(predictedLetter)
+                isSpecialFunction = false,
+                specialFunctionType = null
             )
-            
         } catch (e: Exception) {
             Log.e(TAG, "Error durante la predicción: ${e.message}")
             SignPrediction.ERROR
-        }
-    }
-    
-    /**
-     * Preprocesa la imagen de manera optimizada
-     */
-    private fun preprocessImageOptimized(image: Bitmap): Bitmap {
-        // Si la imagen ya es 28x28, no necesitamos redimensionar
-        if (image.width == INPUT_SIZE && image.height == INPUT_SIZE) {
-            return image
-        }
-        
-        // Redimensionar directamente a 28x28
-        return Bitmap.createScaledBitmap(image, INPUT_SIZE, INPUT_SIZE, true)
-    }
-    
-    /**
-     * Llena el buffer de entrada de manera optimizada
-     */
-    private fun fillInputBuffer(image: Bitmap, buffer: ByteBuffer) {
-        val pixels = IntArray(INPUT_SIZE * INPUT_SIZE)
-        image.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
-        
-        for (i in pixels.indices) {
-            val pixel = pixels[i]
-            // Convertir a escala de grises usando la fórmula estándar
-            val gray = ((pixel and 0xFF0000 shr 16) * 0.299f +
-                        (pixel and 0x00FF00 shr 8) * 0.587f +
-                        (pixel and 0x0000FF) * 0.114f) / 255.0f
-            buffer.putFloat(gray)
         }
     }
     
