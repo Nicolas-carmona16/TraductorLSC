@@ -3,13 +3,17 @@ package co.edu.udea.compumovil.gr09_20251.traductorlsc.screens
 import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.AspectRatio
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
 import androidx.camera.view.PreviewView
@@ -26,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import java.text.SimpleDateFormat
 import java.util.*
@@ -37,12 +42,16 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.graphics.Color
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.navigation.AppRoutes
 import co.edu.udea.compumovil.gr09_20251.traductorlsc.ui.theme.SecondBlue
+import co.edu.udea.compumovil.gr09_20251.traductorlsc.viewmodels.CameraViewModel
 import kotlinx.coroutines.*
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
 
 @Composable
 fun CameraScreen(navController: NavController) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val cameraViewModel: CameraViewModel = viewModel()
 
     var hasCameraPermission by remember { mutableStateOf(false) }
     var hasAudioPermission by remember { mutableStateOf(false) }
@@ -51,7 +60,6 @@ fun CameraScreen(navController: NavController) {
     var isRecording by remember { mutableStateOf(false) }
     var videoCapture: VideoCapture<Recorder>? by remember { mutableStateOf(null) }
     var recording: Recording? by remember { mutableStateOf(null) }
-    var outputUri by remember { mutableStateOf<Uri?>(null) }
 
     var elapsedTime by remember { mutableLongStateOf(0L) }
     var timerJob by remember { mutableStateOf<Job?>(null) }
@@ -63,7 +71,13 @@ fun CameraScreen(navController: NavController) {
         }
     }
 
-    var isProcessing by remember { mutableStateOf(false) }
+    // Estados del ViewModel
+    val currentText by cameraViewModel.currentText.collectAsState()
+    val currentPrediction by cameraViewModel.currentPrediction.collectAsState()
+    val handBoundingBox by cameraViewModel.handBoundingBox.collectAsState()
+    val handDetectionConfidence by cameraViewModel.handDetectionConfidence.collectAsState()
+    val currentLetterStability by cameraViewModel.currentLetterStability.collectAsState()
+    val timeRemaining by cameraViewModel.timeRemaining.collectAsState()
 
     fun formatTime(millis: Long): String {
         val seconds = (millis / 1000) % 60
@@ -75,6 +89,11 @@ fun CameraScreen(navController: NavController) {
         onDispose {
             timerJob?.cancel()
         }
+    }
+
+    // Inicializar el modelo cuando se carga la pantalla
+    LaunchedEffect(Unit) {
+        cameraViewModel.initializeModel(context)
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -108,6 +127,27 @@ fun CameraScreen(navController: NavController) {
             it.setSurfaceProvider(previewView.surfaceProvider)
         }
 
+        // Configurar análisis de imagen para procesar frames
+        val imageAnalysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+            .also { analysis ->
+                analysis.setAnalyzer(
+                    ContextCompat.getMainExecutor(context)
+                ) { imageProxy ->
+                    try {
+                        val bitmap = imageProxy.toBitmapOptimized()
+                        if (bitmap != null) {
+                            cameraViewModel.processFrame(bitmap)
+                        }
+                    } catch (e: Exception) {
+                        // Manejar errores silenciosamente
+                    } finally {
+                        imageProxy.close()
+                    }
+                }
+            }
+
         val qualitySelector = QualitySelector.from(
             Quality.HD,
             FallbackStrategy.higherQualityOrLowerThan(Quality.SD)
@@ -124,20 +164,12 @@ fun CameraScreen(navController: NavController) {
                 lifecycleOwner,
                 cameraSelector,
                 preview,
+                imageAnalysis,
                 videoCapture
             )
         } catch (e: Exception) {
             e.printStackTrace()
         }
-    }
-
-    if (isProcessing) {
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text("Procesando video...") },
-            text = { CircularProgressIndicator() },
-            confirmButton = { }
-        )
     }
 
     Column(
@@ -146,15 +178,123 @@ fun CameraScreen(navController: NavController) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (hasCameraPermission && hasAudioPermission) {
-            AndroidView(
-                factory = { previewView },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(9f / 16f)
-            )
+            Box(modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(9f / 16f)
+            ) {
+                AndroidView(
+                    factory = { previewView },
+                    modifier = Modifier.matchParentSize()
+                )
+                // Overlay para bounding box
+                if (handBoundingBox != null) {
+                    androidx.compose.foundation.Canvas(modifier = Modifier.matchParentSize()) {
+                        val rect = handBoundingBox!!
+                        val left = rect.left * size.width
+                        val top = rect.top * size.height
+                        val right = rect.right * size.width
+                        val bottom = rect.bottom * size.height
+                        
+                        // Color basado en la confianza
+                        val confidenceColor = when {
+                            handDetectionConfidence > 0.8f -> Color.Green
+                            handDetectionConfidence > 0.6f -> Color.Yellow
+                            else -> Color.Red
+                        }
+                        
+                        drawRect(
+                            color = confidenceColor,
+                            topLeft = Offset(left, top),
+                            size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
+                            style = Stroke(width = 4f)
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Información del modelo y predicciones
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Información de detección de mano
+                if (handBoundingBox != null) {
+                    Text(
+                        text = "Mano detectada: ${(handDetectionConfidence * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = when {
+                            handDetectionConfidence > 0.8f -> Color.Green
+                            handDetectionConfidence > 0.6f -> Color.Yellow
+                            else -> Color.Red
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                
+                // Predicción actual
+                currentPrediction?.let { prediction ->
+                    Text(
+                        text = "Detectado: ${prediction.letter} (${(prediction.confidence * 100).toInt()}%)",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (prediction.isSpecialFunction) Color.Blue else Color.Black
+                    )
+                }
+                
+                // Información de estabilización
+                if (currentLetterStability.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = currentLetterStability,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Blue
+                    )
+                    
+                    // Mostrar tiempo restante
+                    if (timeRemaining > 0) {
+                        Text(
+                            text = "Agregando en: ${timeRemaining}s",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Green
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Texto acumulado
+                Text(
+                    text = "Texto: $currentText",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.LightGray, RoundedCornerShape(8.dp))
+                        .padding(8.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Botón para limpiar texto
+            Button(
+                onClick = { cameraViewModel.clearText() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Red,
+                    contentColor = Color.White
+                )
+            ) {
+                Text("Limpiar Texto", style = MaterialTheme.typography.bodyLarge)
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Controles de grabación
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -188,14 +328,8 @@ fun CameraScreen(navController: NavController) {
                                     isRecording = true
                                 },
                                 onRecordingFinished = { uri ->
-                                    isProcessing = true
-                                    CoroutineScope(Dispatchers.Main).launch {
-                                        delay(1000) // simula espera, opcional si usas lógica real de preparación
-                                        isProcessing = false
-                                        navController.navigate(AppRoutes.getVideoPreviewRoute(uri.toString()))
-                                    }
+                                    navController.navigate(AppRoutes.getVideoPreviewRoute(uri.toString()))
                                 }
-
                             )
                         } else {
                             recording?.stop()
@@ -203,10 +337,6 @@ fun CameraScreen(navController: NavController) {
                             isRecording = false
                             timerJob?.cancel()
                             timerJob = null
-
-                            outputUri?.let { uri ->
-                                navController.navigate(AppRoutes.getVideoPreviewRoute(uri.toString()))
-                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -257,6 +387,40 @@ fun CameraScreen(navController: NavController) {
         } else {
             Text("Esperando permisos de cámara y audio...")
         }
+    }
+}
+
+// Extensión optimizada para convertir ImageProxy a Bitmap
+fun androidx.camera.core.ImageProxy.toBitmapOptimized(): Bitmap? {
+    return try {
+        val yBuffer = planes[0].buffer
+        val uBuffer = planes[1].buffer
+        val vBuffer = planes[2].buffer
+
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        val vSize = vBuffer.remaining()
+
+        val nv21 = ByteArray(ySize + uSize + vSize)
+
+        yBuffer.get(nv21, 0, ySize)
+        vBuffer.get(nv21, ySize, vSize)
+        uBuffer.get(nv21, ySize + vSize, uSize)
+
+        val yuvImage = android.graphics.YuvImage(nv21, android.graphics.ImageFormat.NV21, width, height, null)
+        val out = java.io.ByteArrayOutputStream()
+        
+        yuvImage.compressToJpeg(android.graphics.Rect(0, 0, width, height), 80, out)
+        val imageBytes = out.toByteArray()
+        
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = 2
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
+        
+        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, options)
+    } catch (e: Exception) {
+        null
     }
 }
 

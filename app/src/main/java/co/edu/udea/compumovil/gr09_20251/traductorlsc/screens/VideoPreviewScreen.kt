@@ -1,6 +1,9 @@
 package co.edu.udea.compumovil.gr09_20251.traductorlsc.screens
 
+import android.graphics.Bitmap
+import android.graphics.RectF
 import android.net.Uri
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,7 +14,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,6 +44,11 @@ fun VideoPreviewScreen(navController: NavController, videoUri: Uri?) {
         }
     }
 
+    // Inicializar ML al cargar la pantalla
+    LaunchedEffect(Unit) {
+        viewModel.initializeML(context)
+    }
+
     LaunchedEffect(videoUri) {
         if (videoUri != null) {
             val name = videoUri.lastPathSegment?.let {
@@ -51,6 +62,9 @@ fun VideoPreviewScreen(navController: NavController, videoUri: Uri?) {
 
     val videoUriState by viewModel.videoUri.collectAsState()
     val fileName by viewModel.fileName.collectAsState()
+    val currentPrediction by viewModel.currentPrediction.collectAsState()
+    val handBoundingBox by viewModel.handBoundingBox.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
 
     DisposableEffect(Unit) {
         onDispose {
@@ -120,6 +134,62 @@ fun VideoPreviewScreen(navController: NavController, videoUri: Uri?) {
                             }
                         },
                         modifier = Modifier.fillMaxSize()
+                    )
+                    
+                    // Overlay para mostrar el bounding box de la mano
+                    if (handBoundingBox != null) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val rect = handBoundingBox!!
+                            val left = rect.left * size.width
+                            val top = rect.top * size.height
+                            val right = rect.right * size.width
+                            val bottom = rect.bottom * size.height
+                            
+                            drawRect(
+                                color = Color.Red,
+                                topLeft = Offset(left, top),
+                                size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f)
+                            )
+                        }
+                    }
+                }
+
+                // Mostrar predicción actual
+                if (currentPrediction.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = SecondBlue.copy(alpha = 0.1f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "Predicción:",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                currentPrediction,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontSize = 24.sp,
+                                color = SecondBlue
+                            )
+                        }
+                    }
+                }
+
+                // Indicador de procesamiento
+                if (isProcessing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(16.dp),
+                        color = SecondBlue
                     )
                 }
 
